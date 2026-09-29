@@ -1,0 +1,123 @@
+id: 8b79d01b-6b2f-443f-9e9b-4cd748b39dd6
+name: sig-detect
+description: >-
+  Read-only monitor for the CentOS Cloud SIG / Epoxy promotion pipeline: gather
+  the three inputs the sig-promote report joins — the latest builds in each
+  promotion tag (candidate/testing/release), the SIG dist-git spec versions, and
+  the upstream OpenStack release facts — then let the workflow-scope
+  @kneel/koji/sig-promote report render the actionable queue (unbuilt /
+  promote-testing / promote-release / behind-upstream) with the exact cbs command
+  per row. Takes NO actions — it only tells you what's actionable. Safe to cron.
+  The three latest_builds calls are SERIALIZED (login -> candidate -> testing ->
+  release) rather than parallel: they hit the same cbs-koji model and would
+  otherwise contend on its per-model lock. scan + snapshot run in parallel (other
+  models). The promotion-ladder semantics live in the report, not koji — koji
+  only lists builds per tag.
+tags: {}
+reports:
+  require:
+    - "@kneel/koji/sig-promote"
+inputs:
+  type: object
+  properties:
+    candidateTag:
+      type: string
+      default: cloud9s-openstack-epoxy-candidate
+      description: Candidate promotion tag (must end in -candidate).
+    testingTag:
+      type: string
+      default: cloud9s-openstack-epoxy-testing
+      description: Testing promotion tag (must end in -testing).
+    releaseTag:
+      type: string
+      default: cloud9s-openstack-epoxy-release
+      description: Release promotion tag (must end in -release).
+  required: []
+jobs:
+  - name: detect
+    description: >-
+      Gather promotion-tag builds + dist-git specs + upstream releases for the
+      sig-promote report to join. Read-only; no builds, tags, or MRs.
+    steps:
+      - name: login
+        description: SSL/mTLS login to the CBS hub (bootstraps the session for latest_builds).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: login
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: latest-candidate
+        description: Latest build per package in the candidate tag (inheritance-enabled).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: latest_builds
+          inputs:
+            tag: ${{ inputs.candidateTag }}
+        dependsOn:
+          - step: login
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: latest-testing
+        description: >-
+          Latest build per package in the testing tag. Serialized after
+          latest-candidate to avoid cbs-koji per-model lock contention.
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: latest_builds
+          inputs:
+            tag: ${{ inputs.testingTag }}
+        dependsOn:
+          - step: latest-candidate
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: latest-release
+        description: >-
+          Latest build per package in the release tag. Serialized after
+          latest-testing (same per-model lock reason).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: latest_builds
+          inputs:
+            tag: ${{ inputs.releaseTag }}
+        dependsOn:
+          - step: latest-testing
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: snapshot
+        description: >-
+          Read-only snapshot of upstream OpenStack Epoxy release facts
+          (deliverables/epoxy/*.yaml): newest version + shipping repos per
+          deliverable. Independent model — runs in parallel with the koji chain.
+        task:
+          type: model_method
+          modelIdOrName: openstack-epoxy
+          methodName: snapshot
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: scan
+        description: >-
+          Read-only fan-out scan of the CentOS/cloud/rpms distgit group at branch
+          c9s-sig-cloud-epoxy: per-package spec Version/Release/Epoch + sources
+          staging facts. Independent model — parallel with the koji chain.
+        task:
+          type: model_method
+          modelIdOrName: cloud-sig-epoxy
+          methodName: scan
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

@@ -1,0 +1,104 @@
+id: 0dea985d-0cc7-42db-8544-fdc3ab93f420
+name: sig-tag-promote
+description: >-
+  Promote one CBS build across the epoxy tag ladder (candidate -> testing ->
+  release) with an explicit human gate. Reusable for either hop: pass the NVR
+  and the destination tag. login -> manual_approval -> tag_build -> wait_task ->
+  assert CLOSED. Promotion is a manual judgement call (no CI gate), so the
+  approval step is the gate the SIG operator clicks after reviewing the
+  sig-promote matrix. Tagging into ...-release triggers hub-side sign+push; we
+  only ever tag, never sign.
+tags: {}
+inputs:
+  type: object
+  properties:
+    build:
+      type: string
+      description: Build NVR to promote, e.g. openstack-keystone-27.0.2-1.el9s
+    toTag:
+      type: string
+      description: >-
+        Destination tag, e.g. cloud9s-openstack-epoxy-testing or
+        cloud9s-openstack-epoxy-release
+  required:
+    - build
+    - toTag
+jobs:
+  - name: promote
+    description: Tag a single build into the next epoxy tag, gated on approval.
+    steps:
+      - name: login
+        description: Bootstrap the cbs-koji session (SSL sslLogin).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: login
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: approve
+        description: >-
+          Human gate. Approve only after reviewing the sig-promote matrix for
+          this build. Reject to abort with no koji write.
+        task:
+          type: manual_approval
+          prompt: >-
+            Promote ${{ inputs.build }} into ${{ inputs.toTag }}? This is a real
+            koji tag write (release = hub-side sign+push to mirrors). Approve
+            only if the sig-promote matrix says it is ready.
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: tag
+        description: Apply the destination tag to the build (async; returns task_id).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: tag_build
+          inputs:
+            tag: ${{ inputs.toTag }}
+            build: ${{ inputs.build }}
+        dependsOn:
+          - step: login
+            condition:
+              type: succeeded
+          - step: approve
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: wait
+        description: Poll the tag task to a terminal state.
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: wait_task
+          inputs:
+            task_id: ${{ data.latest("cbs-koji", "tag-write").attributes.task_id }}
+            timeout: 600
+        dependsOn:
+          - step: tag
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: assert-closed
+        description: Fail the run unless the tag task finished CLOSED (not FAILED/timed out).
+        task:
+          type: assert
+          expr: >-
+            data.latest("cbs-koji", "task-wait").attributes.finished == true &&
+            data.latest("cbs-koji", "task-wait").attributes.stateName == "CLOSED"
+          message: >-
+            Tag task did not finish CLOSED — build was not promoted into the
+            destination tag.
+          severity: high
+        dependsOn:
+          - step: wait
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

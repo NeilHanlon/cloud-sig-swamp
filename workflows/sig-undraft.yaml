@@ -1,0 +1,98 @@
+id: 677f128c-265f-477d-a8f7-b8da21cc40e9
+name: sig-undraft
+description: >-
+  Post-merge undraft (build-once). The draft build was already produced from the
+  PR branch by sig-propose and KEPT; this promotes that same artifact to the
+  canonical build on merge — no rebuild. Verifies the dist-git MR actually
+  merged, then calls promote_build (synchronous draft→canonical). The promoted
+  NVR (draft marker stripped) lands in promote-write.promotedNvr for the
+  human-gated sig-tag-promote to carry up the tag ladder. Fails fast if the MR is
+  not yet merged so a driver can retry until the SIG merges.
+tags: {}
+inputs:
+  type: object
+  properties:
+    project:
+      type: string
+      description: GitLab project path, e.g. CentOS/cloud/rpms/python-keystonemiddleware
+    iid:
+      type: number
+      description: Merge request iid to confirm merged before promoting.
+    draftBuild:
+      type: string
+      description: >-
+        The draft build id or NVR to promote (as produced by sig-propose's draft
+        build, e.g. openstack-keystone-27.0.2-1,draft_<id>.el9s).
+    force:
+      type: boolean
+      default: false
+      description: Admin-only bypass of the hub promotion policy/permission check.
+  required:
+    - project
+    - iid
+    - draftBuild
+jobs:
+  - name: undraft
+    description: Confirm the MR merged, then promote the kept draft build to canonical.
+    steps:
+      - name: check-merged
+        description: Fetch current MR state from GitLab (mergeStatus snapshot).
+        task:
+          type: model_method
+          modelIdOrName: sig-gitlab
+          methodName: get_merge_request
+          inputs:
+            project: ${{ inputs.project }}
+            iid: ${{ inputs.iid }}
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: assert-merged
+        description: >-
+          Gate: only promote once the MR is merged. Fails fast otherwise so a
+          driver can retry until the SIG merges it.
+        task:
+          type: assert
+          expr: data.latest("sig-gitlab", "mergeStatus").attributes.state == "merged"
+          message: >-
+            MR is not merged yet (state != merged) — refusing to promote the
+            draft. Retry after the SIG merges.
+          severity: high
+        dependsOn:
+          - step: check-merged
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: login
+        description: Bootstrap the cbs-koji session (SSL sslLogin).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: login
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: promote
+        description: >-
+          Promote the draft build to canonical (synchronous; no task). Records
+          the resulting canonical NVR in promote-write.promotedNvr.
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: promote_build
+          inputs:
+            build: ${{ inputs.draftBuild }}
+            force: ${{ inputs.force }}
+        dependsOn:
+          - step: assert-merged
+            condition:
+              type: succeeded
+          - step: login
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

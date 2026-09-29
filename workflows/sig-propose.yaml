@@ -1,0 +1,116 @@
+id: 006202c6-8e65-49d7-a024-04d4c728b860
+name: sig-propose
+description: >-
+  Front-half of the build-once SIG pipeline: produce the KEPT draft build for a
+  proposed version bump. Runs AFTER the bump branch has been pushed to the user's
+  fork with `git push -o merge_request.create` (that push, git-SSH under the
+  user's identity, is what opens the fork->upstream MR — GitLab's GraphQL
+  mergeRequestCreate can't do cross-project MRs, so the workflow does NOT create
+  the MR). A DRAFT build (not scratch) is built ONCE and retained: on merge,
+  sig-undraft promotes this exact artifact to canonical (no rebuild); if the SIG
+  rejects the MR the draft is simply never promoted. The draft build runs against
+  the target whose dest tag is the candidate tag, so the artifact lands tagged in
+  candidate as a draft NVR. Assert the build task finished CLOSED so a red build
+  fails the proposal loudly instead of leaving an unpromotable draft.
+tags: {}
+inputs:
+  type: object
+  properties:
+    source:
+      type: string
+      description: >-
+        Build source: an SCM URL (git+https://gitlab.com/<fork-or-upstream>/rpms/<pkg>#<ref>)
+        pointing at the pushed bump branch, or a local .src.rpm path (streams the
+        SRPM to koji's upload area). This is the exact revision that becomes the
+        kept build.
+    target:
+      type: string
+      description: >-
+        CBS build target, e.g. cloud9s-openstack-epoxy-el9s (dest tag =
+        cloud9s-openstack-epoxy-candidate). Also cloud10s/cloud9/cloud10 epoxy
+        variants.
+    timeout:
+      type: number
+      default: 1800
+      description: Max seconds to wait for the build task to reach a terminal state.
+    interval:
+      type: number
+      default: 20
+      description: Seconds between build-task poll attempts.
+  required:
+    - source
+    - target
+jobs:
+  - name: propose
+    description: >-
+      Log in, submit the kept draft build, poll it to terminal, and assert it
+      built CLOSED.
+    steps:
+      - name: login
+        description: SSL/mTLS login to the CBS hub (cert-based; bootstraps the session).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: login
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: submit
+        description: >-
+          Submit the DRAFT build (build once, keep). draft:true is mutually
+          exclusive with scratch — the resulting artifact is retained and tagged
+          into candidate as a draft NVR for later promotion. Async: emits
+          build-write with the task_id.
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: submit_build
+          inputs:
+            source: ${{ inputs.source }}
+            target: ${{ inputs.target }}
+            draft: true
+        dependsOn:
+          - step: login
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: wait
+        description: Poll the build task to a terminal state and snapshot it (task-wait).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: wait_task
+          inputs:
+            task_id: ${{ data.latest("cbs-koji", "build-write").attributes.task_id }}
+            timeout: ${{ inputs.timeout }}
+            interval: ${{ inputs.interval }}
+        dependsOn:
+          - step: submit
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: assert-built
+        description: >-
+          Gate: the draft build must have finished CLOSED. A failed build here
+          means the proposed bump is not buildable — fail loudly rather than
+          leave an unpromotable draft behind.
+        task:
+          type: assert
+          expr: >-
+            data.latest("cbs-koji", "task-wait").attributes.finished == true &&
+            data.latest("cbs-koji", "task-wait").attributes.stateName == "CLOSED"
+          message: >-
+            Draft build task did not finish CLOSED — the proposed bump did not
+            build. Inspect the koji task; do not attempt to promote.
+          severity: high
+        dependsOn:
+          - step: wait
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

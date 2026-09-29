@@ -1,0 +1,111 @@
+id: b91f050e-4560-448c-84e7-f5acf9ed7fd1
+name: sig-scratch-build
+description: >-
+  Net-zero dry-run build of a CBS SIG package. A SCRATCH build produces no
+  retained artifact and no auto-tag, so it safely answers one question — "does
+  this revision build?" — without leaving anything promotable behind. Use it to
+  validate a version bump (or any risky change) BEFORE proposing it: a red
+  scratch build is the PR-gate (build fails -> do not open the MR / do not run
+  sig-propose). It also exercises the local-.src.rpm upload leg (streams the SRPM
+  to koji's upload area). The companion sig-propose runs the same skeleton with
+  draft:true to build a KEPT artifact once the bump is ready to propose. Steps:
+  login -> submit_build(scratch:true) -> wait_task -> assert CLOSED.
+tags: {}
+inputs:
+  type: object
+  properties:
+    source:
+      type: string
+      description: >-
+        Build source: an SCM URL (git+https://gitlab.com/<fork-or-upstream>/rpms/<pkg>#<ref>)
+        or a local .src.rpm path (streams the SRPM to koji's upload area). This
+        is the exact revision under test.
+    target:
+      type: string
+      description: >-
+        CBS build target, e.g. cloud9s-openstack-epoxy-el9s. For a scratch build
+        the dest tag is irrelevant (nothing is tagged); the target still selects
+        the build tag / buildroot.
+    timeout:
+      type: number
+      default: 1800
+      description: Max seconds to wait for the build task to reach a terminal state.
+    interval:
+      type: number
+      default: 20
+      description: Seconds between build-task poll attempts.
+  required:
+    - source
+    - target
+jobs:
+  - name: scratch
+    description: >-
+      Log in, submit the scratch build, poll it to terminal, and assert it built
+      CLOSED so the workflow's exit status is the buildability gate.
+    steps:
+      - name: login
+        description: SSL/mTLS login to the CBS hub (cert-based; bootstraps the session).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: login
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: submit
+        description: >-
+          Submit the SCRATCH build (net-zero: no retained artifact, no auto-tag).
+          Async: emits build-write with the task_id.
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: submit_build
+          inputs:
+            source: ${{ inputs.source }}
+            target: ${{ inputs.target }}
+            scratch: true
+        dependsOn:
+          - step: login
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: wait
+        description: Poll the build task to a terminal state and snapshot it (task-wait).
+        task:
+          type: model_method
+          modelIdOrName: cbs-koji
+          methodName: wait_task
+          inputs:
+            task_id: ${{ data.latest("cbs-koji", "build-write").attributes.task_id }}
+            timeout: ${{ inputs.timeout }}
+            interval: ${{ inputs.interval }}
+        dependsOn:
+          - step: submit
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: assert-built
+        description: >-
+          Gate: the scratch build must have finished CLOSED. A red build is the
+          answer "this revision does not build" — fail the workflow so an
+          automated caller does not proceed to propose it.
+        task:
+          type: assert
+          expr: >-
+            data.latest("cbs-koji", "task-wait").attributes.finished == true &&
+            data.latest("cbs-koji", "task-wait").attributes.stateName == "CLOSED"
+          message: >-
+            Scratch build task did not finish CLOSED — this revision does not
+            build. Inspect the koji task; do not propose this bump.
+          severity: high
+        dependsOn:
+          - step: wait
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1
