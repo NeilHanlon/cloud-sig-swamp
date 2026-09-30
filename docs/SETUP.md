@@ -9,6 +9,43 @@ Clone it wherever you like; run the commands below from the root of your clone.
 
 ---
 
+## Quickstart
+
+**The four model instances are already committed to this repo** (`cbs-koji`,
+`cloud-sig-epoxy`, `openstack-epoxy`, `sig-gitlab`) — you don't create them. They
+carry no secrets: the koji cert is a file path and the GitLab token is a
+`vault.get(...)` reference. You only supply your own credentials and run.
+
+```bash
+git clone https://github.com/NeilHanlon/cloud-sig-swamp && cd cloud-sig-swamp
+swamp auth login                      # your swamp registry account
+
+# pull the extensions the committed models reference
+for e in @kneel/koji @kneel/sig-distgit @kneel/openstack-releases @webframp/gitlab @kneel/gitlab-fork; do
+  swamp extension pull "$e"
+done
+
+# your credentials:
+#  1. ACO client cert at ~/.centos.cert  (see §1 if you don't have one yet)
+#  2. a koji vault for CBS session persistence (holds no secret of yours; koji writes its session here):
+swamp vault create local_encryption koji
+#  3. (optional — only for the fork/MR flow) a GitLab token:
+swamp vault create local_encryption gitlab
+swamp vault put gitlab TOKEN          # paste your fine-grained PAT
+
+# go — read-only monitor:
+swamp model method run cbs-koji login
+swamp workflow run sig-detect
+swamp report get "@kneel/sig-distgit/sig-promote" --workflow sig-detect --markdown
+```
+
+That's the whole read-only path. The sections below explain each prerequisite
+(especially the ACO cert), document the committed models so you can retarget them
+to another release, and cover the build/promote pipeline. Read them if the
+quickstart hits a wall or you want to understand what you're running.
+
+---
+
 ## 1. Prerequisites
 
 | Need | Why | Where it comes from |
@@ -110,31 +147,36 @@ classic `api` scope, so the GitLab extension's user-level GraphQL methods
 (`list_my_merge_requests`, `list_todos`) won't work — the REST methods this
 pipeline uses do.
 
-## 5. Create the model instances
+## 5. The model instances (already committed)
+
+The four instances are checked into this repo under `models/` — you do **not**
+create them:
+
+| Instance | Type | Notes |
+| --- | --- | --- |
+| `cbs-koji` | `@kneel/koji` | SSL/mTLS to CBS via `cert: ~/.centos.cert` (the koji model expands `~/`) |
+| `cloud-sig-epoxy` | `@kneel/sig-distgit` | defaults to group `CentOS/cloud/rpms`, branch `c9s-sig-cloud-epoxy` |
+| `openstack-epoxy` | `@kneel/openstack-releases` | upstream release feed |
+| `sig-gitlab` | `@webframp/gitlab` | `host: gitlab.com`, `token: ${{ vault.get("gitlab", "TOKEN") }}` |
+
+They carry no secrets — the cert is a file path and the token is a vault
+reference — so they're safe to share. Just make sure the vaults from §4 exist and
+your `~/.centos.cert` is in place.
+
+**Retargeting to another release** (e.g. `el10s` / a different SIG group): edit
+the committed YAML, or recreate an instance. The `--global-arg` form (the flag is
+`--global-arg key=value`, repeatable):
 
 ```bash
-# CBS Koji, SSL/mTLS auth via your ACO cert.
-# The koji model expands a leading ~/ in the cert path; $HOME is equivalent and unambiguous.
 swamp model create @kneel/koji cbs-koji \
   --global-arg server=https://cbs.centos.org/kojihub \
   --global-arg authtype=ssl \
   --global-arg cert="$HOME/.centos.cert"
-
-# SIG dist-git scanner (defaults to group CentOS/cloud/rpms, branch c9s-sig-cloud-epoxy)
-swamp model create @kneel/sig-distgit cloud-sig-epoxy
-
-# Upstream OpenStack release feed
-swamp model create @kneel/openstack-releases openstack-epoxy
-
-# GitLab (only for the fork/MR flow)
-swamp model create @webframp/gitlab sig-gitlab \
-  --global-arg host=gitlab.com \
-  --global-arg 'token=${{ vault.get("gitlab", "TOKEN") }}'
 ```
 
-> The flag is `--global-arg key=value` (repeatable). If a flag or arg name is
-> rejected on your swamp version, run `swamp model type describe @kneel/koji --json`
-> to see the exact argument names, or set them afterward with `swamp model edit`.
+> If a flag or arg name is rejected on your swamp version, run
+> `swamp model type describe @kneel/koji --json` to see the exact argument names,
+> or set them with `swamp model edit`.
 
 ## 6. Verify — run the read-only monitor
 

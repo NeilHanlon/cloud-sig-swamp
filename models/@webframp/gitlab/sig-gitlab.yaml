@@ -1,0 +1,10 @@
+type: '@webframp/gitlab'
+typeVersion: 2026.09.23.1
+id: 7e99a0b5-6f39-4cb9-bdd9-17cfa6acdf5a
+name: sig-gitlab
+version: 1
+tags: {}
+globalArguments:
+  host: gitlab.com
+  token: '${{ vault.get("gitlab", "TOKEN") }}'
+methods: {}

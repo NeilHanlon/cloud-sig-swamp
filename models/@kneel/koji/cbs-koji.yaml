@@ -1,0 +1,11 @@
+type: '@kneel/koji'
+typeVersion: 2026.08.09.1
+id: 15621231-98cd-4c25-be5f-f8875a7efabe
+name: cbs-koji
+version: 1
+tags: {}
+globalArguments:
+  server: 'https://cbs.centos.org/kojihub'
+  authtype: ssl
+  cert: ~/.centos.cert
+methods: {}

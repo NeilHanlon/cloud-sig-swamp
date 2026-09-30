@@ -1,0 +1,8 @@
+type: '@kneel/openstack-releases'
+typeVersion: 2026.09.29.1
+id: c8ef97da-3df7-4809-aa7a-360cfb87dfa0
+name: openstack-epoxy
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
