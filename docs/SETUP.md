@@ -5,7 +5,7 @@ right CBS permissions, the full build/promote pipeline). Everything is
 [swamp](https://github.com/swamp-club/swamp): the four model types are published
 to the swamp registry, so setup is *pull + configure your own credentials*.
 
-Assumed clone location below is `~/cloud-sig-swamp` — adjust to taste.
+Clone it wherever you like; run the commands below from the root of your clone.
 
 ---
 
@@ -14,7 +14,7 @@ Assumed clone location below is `~/cloud-sig-swamp` — adjust to taste.
 | Need | Why | Where it comes from |
 | --- | --- | --- |
 | **swamp CLI** | runs the models/workflows | [swamp install + quickstart](https://swamp-club.com/manual) |
-| **A swamp registry account** | to `swamp extension pull` | free account at [swamp-club.com](https://swamp-club.com), then `swamp auth login` |
+| **A swamp registry account** | to `swamp extension pull` | sign up at [swamp-club.com](https://swamp-club.com), then `swamp auth login` |
 | **ACO client cert** | mTLS auth to CBS (`cbs.centos.org`) | ACO account → `centos-packager` → `centos-cert` → `~/.centos.cert` (steps below) |
 | **A SIG dist-git checkout** | *only for building/updating a package* | clone from `gitlab.com/CentOS/cloud/rpms/<pkg>` (steps below) |
 | **CBS group membership** | *only for real builds/tags* — read-only `sig-detect` needs just the cert | ask the Cloud SIG for `cloud` tag ACLs |
@@ -60,16 +60,17 @@ The RUNBOOK's build/update recipes assume packages live under `~/centos-rpms/<pk
 ## 2. Clone + initialize the repo
 
 ```bash
-git clone https://github.com/NeilHanlon/cloud-sig-swamp ~/cloud-sig-swamp
-cd ~/cloud-sig-swamp
-swamp repo init          # if .swamp.yaml isn't already present
-swamp auth whoami        # confirm you're logged in to the registry
+git clone https://github.com/NeilHanlon/cloud-sig-swamp
+cd cloud-sig-swamp      # everything below runs from here
+swamp repo init         # if .swamp.yaml isn't already present
+swamp auth whoami       # confirm you're logged in to the registry
 ```
 
 ## 3. Pull the extensions
 
-All four model types (plus the `sig-promote` report, which ships inside
-`@kneel/sig-distgit`) come from the registry:
+The four model types — plus `@kneel/gitlab-fork` (an *extension* that adds
+`fork_project` to `@webframp/gitlab`, not a new type) — all come from the
+registry. The `sig-promote` report ships inside `@kneel/sig-distgit`. Five pulls:
 
 ```bash
 swamp extension pull @kneel/koji
@@ -113,7 +114,7 @@ pipeline uses do.
 
 ```bash
 # CBS Koji, SSL/mTLS auth via your ACO cert.
-# Use an absolute path for the cert ("~" is NOT expanded inside a global-arg value).
+# The koji model expands a leading ~/ in the cert path; $HOME is equivalent and unambiguous.
 swamp model create @kneel/koji cbs-koji \
   --global-arg server=https://cbs.centos.org/kojihub \
   --global-arg authtype=ssl \
@@ -142,16 +143,18 @@ swamp model method run cbs-koji login          # SSL login; should report a sess
 swamp workflow run sig-detect                  # ~2–4 min; hits CBS read-only
 ```
 
-`sig-detect` prints the actionable queue and writes the `sig-promote` report
-JSON under `.swamp/data/workflow/<workflow-id>/report-kneel-sig-distgit-sig-promote-json/<run>/raw`,
-where `<workflow-id>` is the workflow **definition** id (stable across runs) and
-`<run>` increments per run. To grab the latest report regardless of ids:
+`sig-detect` prints the actionable queue to the console. To re-read the report
+it produced, ask swamp for it — don't dig through `.swamp/`; swamp owns that:
 
 ```bash
-jq . "$(ls -t .swamp/data/workflow/*/report-kneel-sig-distgit-sig-promote-json/*/raw | head -1)"
+# Human-readable: renders the full Action queue + sources-staging tables
+swamp report get "@kneel/sig-distgit/sig-promote" --workflow sig-detect --markdown
+
+# Machine-readable: the report payload is under .json — compose with jq as you like
+swamp report get "@kneel/sig-distgit/sig-promote" --workflow sig-detect --json | jq '.json.summary'
 ```
 
-If that runs green, your setup is correct.
+If `sig-detect` runs green and the report renders, your setup is correct.
 
 ---
 

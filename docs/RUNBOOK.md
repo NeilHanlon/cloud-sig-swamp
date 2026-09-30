@@ -1,8 +1,8 @@
 # RUNBOOK — CentOS Cloud SIG packaging with our swamp tooling
 
 Operator runbook for **detecting**, building, updating, and promoting Cloud SIG
-(RDO) packages on **CBS** (`cbs.centos.org`). Everything lives in this repo
-(`~/cloud-sig-swamp`) — models, all five workflows, and the report.
+(RDO) packages on **CBS** (`cbs.centos.org`). Everything lives in this repo —
+models, all five workflows, and the report.
 Copy-paste recipes; no LLM required. First-time setup (install swamp, pull the
 extensions, create your vaults and models) is in [SETUP.md](SETUP.md); this
 runbook assumes that is done. Every command below was run (or, for the
@@ -15,7 +15,7 @@ written.
 
 ---
 
-## 0. The pieces (all in `~/cloud-sig-swamp`)
+## 0. The pieces (all in your clone, referred to as `$SIG`)
 
 | Thing | What | Run by |
 | --- | --- | --- |
@@ -35,18 +35,24 @@ written.
 - promotion tags: `cloud9s-openstack-epoxy-{candidate,testing,release}`
 - SIG lookaside: **`https://src.sigs.centos.org`** (NOT `sources.stream.centos.org`)
 
-Run everything from the repo root (`~/cloud-sig-swamp`). All four model types
-(`@kneel/koji`, `@kneel/sig-distgit`, `@kneel/openstack-releases`,
-`@webframp/gitlab`) are published to the swamp registry and pulled during setup
-(see [SETUP.md](SETUP.md)) — no local extension sources required. Auth is your
-own `~/.centos.cert` (ACO cert), same CBS hub.
+Run all swamp commands from the root of your clone. The recipes below refer to
+that root as `$SIG` — set it once for wherever you cloned the repo:
+
+```bash
+export SIG=~/path/to/your/cloud-sig-swamp   # wherever you cloned it
+```
+
+All four model types (`@kneel/koji`, `@kneel/sig-distgit`,
+`@kneel/openstack-releases`, `@webframp/gitlab`) are published to the swamp
+registry and pulled during setup (see [SETUP.md](SETUP.md)) — no local extension
+sources required. Auth is your own `~/.centos.cert` (ACO cert), same CBS hub.
 
 ---
 
 ## 1. Log in to CBS
 
 ```bash
-cd ~/cloud-sig-swamp
+cd "$SIG"
 swamp model method run cbs-koji login                          # SSL, uses ~/.centos.cert
 swamp data get cbs-koji session --json | jq .content.callnum   # sanity: a number
 ```
@@ -80,18 +86,23 @@ report over them. **Read-only — no builds, tags, or MRs.** ~2 min (the dist-gi
 scan is the slow part).
 
 ```bash
-cd ~/cloud-sig-swamp
+cd "$SIG"
 swamp workflow run sig-detect        # defaults = the c9s epoxy tag triplet
 ```
-The console prints the full matrix (actionable rows sorted first). For the
-machine-readable queue, read the report JSON the run produced:
+The console prints the full matrix (actionable rows sorted first). To re-read the
+report the run produced, ask swamp for it — don't dig through `.swamp/`:
 
 ```bash
-# The report file is named `raw`, one per run dir. Grab the newest across all runs:
-R=$(ls -t .swamp/data/workflow/*/report-kneel-sig-distgit-sig-promote-json/*/raw | head -1)
-jq '.summary' "$R"                                   # counts: actionable / unbuilt / promoteTesting / …
-jq -r '.rows[] | select(.status=="unbuilt" or .status=="promote-testing" or .status=="promote-release")
-       | "\(.status)\t\(.package)\t\(.candidate // "-")"' "$R"
+# Human-readable: renders the Action queue + sources-staging tables directly (no jq)
+swamp report get "@kneel/sig-distgit/sig-promote" --workflow sig-detect --markdown
+
+# Machine-readable: payload is under .json — jq on --json output is fine (rule 3), just
+# never read the .swamp/ files by hand.
+swamp report get "@kneel/sig-distgit/sig-promote" --workflow sig-detect --json \
+  | jq '.json.summary'                                # counts: actionable / unbuilt / promoteTesting / …
+swamp report get "@kneel/sig-distgit/sig-promote" --workflow sig-detect --json \
+  | jq -r '.json.rows[] | select(.status=="unbuilt" or .status=="promote-testing" or .status=="promote-release")
+           | "\(.status)\t\(.package)\t\(.candidate // "-")"'
 ```
 Statuses: **unbuilt** (spec/upstream newer than candidate → build owed),
 **promote-testing** / **promote-release** (a built NVR ready to tag up),
@@ -115,7 +126,7 @@ commit to the real (draft) build. The workflow asserts the task finished CLOSED,
 so a red build fails the workflow (the PR-gate: don't propose what won't build).
 
 ```bash
-cd ~/cloud-sig-swamp
+cd "$SIG"
 # from a local SRPM (proves it builds; also the RDO-native upload path):
 swamp workflow run sig-scratch-build \
   --input source=/path/to/openstack-foo-1.2.3-1.el9s.src.rpm \
@@ -263,7 +274,7 @@ draft = the keeper. Don't scratch-then-real — that builds twice.)
 **8a. `sig-propose` — the kept draft build.** Run it after §5's branch is pushed
 + MR opened. Builds once and keeps it.
 ```bash
-cd ~/cloud-sig-swamp
+cd "$SIG"
 swamp workflow run sig-propose \
   --input source='git+https://gitlab.com/<you>/rpms/<pkg>.git#<sha>' \
   --input target=cloud9s-openstack-epoxy-el9s
@@ -321,7 +332,7 @@ swamp model method run cbs-koji wait_task --input task_id=<tag-task-id>   # tag_
 ## Gotchas cheat-sheet
 
 - **`.content`** — where `swamp data get --json` payloads live (workflow CEL uses `.attributes`).
-- **Run from `~/cloud-sig-swamp`** — all models + workflows are native here now.
+- **Run swamp commands from your clone root (`$SIG`)** — all models + workflows are native here.
 - **`sig-detect` is read-only** — run it anytime; it's the "what's actionable" entry point.
 - **Draft, not scratch, for keeps** — `sig-propose` (draft) builds once and is promotable; scratch is throwaway validation. You can't tag a scratch build.
 - **Push bumps to your FORK**, MR fork→upstream via `git push -o merge_request.create` over the **SSH** remote — never push branches to the upstream repo. (GitLab's GraphQL MR API can't do cross-project MRs; the push-option is the mechanism.)
