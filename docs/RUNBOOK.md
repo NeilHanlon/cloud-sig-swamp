@@ -154,44 +154,37 @@ git checkout c9s-sig-cloud-epoxy && git pull
 git checkout -b bump-keystonemiddleware-$V
 ```
 
-**5a. Bump the spec** (Version + a %changelog entry). `Source0` usually uses
-`%{version}`, so the tarball name follows automatically:
+**5a. Bump the spec** (Version + `%changelog`) with `rpmdev-bumpspec`:
 ```bash
-sed -i "s/^Version:\(\s*\).*/Version:\1$V/" "$SPEC"
-sed -i "/^%changelog/a\\
-* $(date +'%a %b %d %Y') Your Name <you@example.com> - $V-1\\
-- Update to $V\\
-" "$SPEC"
+rpmdev-bumpspec -n "$V" -c "Update to $V" -u "Your Name <you@example.com>" "$SPEC"
 ```
+`-n` sets the new Version and resets Release to 1; `-c`/`-u` write the changelog
+entry (correct date + format). (Check the result on RDO specs that carry a
+`milestone`/rc — a plain point release like this is fine.)
 
-**5b. Fetch the binary sources.** RDO specs carry three URL `Source`s — the
-tarball, its `.asc`, and the OpenStack gpg key:
+**5b. Set the signing key, then fetch + verify sources with `spectool`.** RDO
+specs carry three URL `Source`s — the tarball, its `.asc`, and the OpenStack gpg
+key at `%{sources_gpg_sign}`. Resolve the correct key **first** (§6; a bump almost
+always needs a newer key than the spec pins), set it, then let `spectool` pull
+everything the spec declares — no hardcoded URLs:
 ```bash
-SVC=keystonemiddleware   # the upstream project (%{sname}/%{service})
-curl -sSLO "https://tarballs.openstack.org/$SVC/$SVC-$V.tar.gz"
-curl -sSLO "https://tarballs.openstack.org/$SVC/$SVC-$V.tar.gz.asc"
-```
-
-**5c. Resolve the CORRECT gpg key** — see §6. A bump almost always needs
-`%{sources_gpg_sign}` updated to the OpenStack release key active *when the
-tarball was signed*. Set it and fetch that key file:
-```bash
-KEY=0x<lowercase-primary-fpr>          # from §6
+SVC=keystonemiddleware                  # upstream project (%{service}/%{sname})
+KEY=0x<lowercase-primary-fpr>           # resolve per §6 — NEVER disable verification
 sed -i "s/^%global sources_gpg_sign .*/%global sources_gpg_sign $KEY/" "$SPEC"
-curl -sSLO "https://releases.openstack.org/_static/$KEY.txt"
+spectool -g -S "$SPEC"                  # downloads Source0 tarball + .asc + the key .txt
 gpg --verify "$SVC-$V.tar.gz.asc" "$SVC-$V.tar.gz"    # must say: Good signature
 ```
 
-**5d. Build the SRPM locally:**
+**5c. Build the SRPM locally:**
 ```bash
 rpmbuild -bs --define "_topdir /tmp/rpmbuild" --define "_sourcedir $K" \
   --define "_srcrpmdir /tmp" --define "dist .el9s" "$SPEC"
 ```
 
-**5e. Scratch-build it** (§4). Fails at `%prep gpgverify` → key is wrong (§6).
+**5d. Scratch-build it** (§4). Fails at `%prep gpgverify` → key is wrong (§6).
 Fails in `buildArch` → a real packaging problem; fix the spec.
 
-**5f. Upload the three sources to the lookaside** (idempotent; §7), then write
+**5e. Upload the three sources to the lookaside** (idempotent; §7), then write
 the `sources` metadata + gitignore the blobs:
 ```bash
 rm -f sources
@@ -203,7 +196,7 @@ done
 > The tarball/.asc/key are **binary sources — they go in the lookaside, NEVER in
 > git.** Only `sources` (the SHA512 metadata) and `.gitignore` are committed.
 
-**5g. Commit + push to your FORK, open the MR fork→upstream** (git push-options,
+**5f. Commit + push to your FORK, open the MR fork→upstream** (git push-options,
 SSH remote, no token — the GitLab GraphQL MR API can't do cross-project MRs, so
 the push-option is how the fork→upstream MR is opened). **Policy: push bump
 branches to your fork, never to the upstream ref list.** Only after a green
