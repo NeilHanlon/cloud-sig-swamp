@@ -47,6 +47,11 @@ All four model types (`@kneel/koji`, `@kneel/sig-distgit`,
 registry and pulled during setup (see [SETUP.md](SETUP.md)) — no local extension
 sources required. Auth is your own `~/.centos.cert` (ACO cert), same CBS hub.
 
+The **detect/promote** paths need only swamp + the cert. The **bump/build**
+recipes (§4–§5) also use the standard SIG packaging tools:
+`sudo dnf install centpkg-sig rpmdevtools mock` (`centpkg-sig` is the SIG dist-git
++ lookaside + CBS client; `rpmdevtools` gives `spectool`/`rpmdev-bumpspec`).
+
 ---
 
 ## 1. Log in to CBS
@@ -175,28 +180,29 @@ spectool -g -S "$SPEC"                  # downloads Source0 tarball + .asc + the
 gpg --verify "$SVC-$V.tar.gz.asc" "$SVC-$V.tar.gz"    # must say: Good signature
 ```
 
-**5c. Build the SRPM locally:**
+**5c. Upload the sources to the SIG lookaside** — `centpkg-sig new-sources`
+uploads via the ACO-cert endpoint, rewrites the `sources` file with the checksums,
+and updates `.gitignore`, all in one command:
 ```bash
-rpmbuild -bs --define "_topdir /tmp/rpmbuild" --define "_sourcedir $K" \
-  --define "_srcrpmdir /tmp" --define "dist .el9s" "$SPEC"
+centpkg-sig new-sources "$SVC-$V.tar.gz" "$SVC-$V.tar.gz.asc" "$KEY.txt"
 ```
+> Binary sources (tarball/.asc/key) live in the lookaside, **never** git —
+> `new-sources` enforces that; only `sources` + `.gitignore` are committed. Run it
+> inside `$K`; it infers the package from the checkout. (One gotcha: `centpkg-sig`'s
+> default *clone* namespace is `CentOS/rpms`, not the SIG's `CentOS/cloud/rpms` — so
+> keep the plain `git clone …/cloud/rpms/…` for the checkout above; `new-sources` /
+> `sources` / `mockbuild` key off the package name + your cert, not the git remote.)
 
-**5d. Scratch-build it** (§4). Fails at `%prep gpgverify` → key is wrong (§6).
-Fails in `buildArch` → a real packaging problem; fix the spec.
-
-**5e. Upload the three sources to the lookaside** (idempotent; §7), then write
-the `sources` metadata + gitignore the blobs:
+**5d. Build it in a clean chroot** with `mock` (wrapped by centpkg-sig) — catches
+missing `BuildRequires` a bare `rpmbuild -bs` never would:
 ```bash
-rm -f sources
-sha512sum --tag "$SVC-$V.tar.gz" "$SVC-$V.tar.gz.asc" "$KEY.txt" > sources
-for f in "$SVC-$V.tar.gz" "$SVC-$V.tar.gz.asc" "$KEY.txt"; do
-  grep -qxF "$f" .gitignore || echo "$f" >> .gitignore
-done
+centpkg-sig mockbuild            # clean local build; `centpkg-sig srpm` for just the .src.rpm
 ```
-> The tarball/.asc/key are **binary sources — they go in the lookaside, NEVER in
-> git.** Only `sources` (the SHA512 metadata) and `.gitignore` are committed.
+For a real CBS pre-merge check, use `centpkg-sig scratch-build` or the swamp
+`sig-scratch-build` workflow (§4). Fails at `%prep gpgverify` → key is wrong (§6);
+fails in the compile → a real packaging problem, fix the spec.
 
-**5f. Commit + push to your FORK, open the MR fork→upstream** (git push-options,
+**5e. Commit + push to your FORK, open the MR fork→upstream** (git push-options,
 SSH remote, no token — the GitLab GraphQL MR API can't do cross-project MRs, so
 the push-option is how the fork→upstream MR is opened). **Policy: push bump
 branches to your fork, never to the upstream ref list.** Only after a green
@@ -238,13 +244,17 @@ curl -s -o /dev/null -w '%{http_code}\n' -I "https://releases.openstack.org/_sta
 Gotcha: `_static/` filenames are **lowercase** — an uppercase fingerprint 404s.
 Set `%{sources_gpg_sign} = $KEY` and re-verify (`Good signature`).
 
-## 7. Lookaside upload (SIG)
+## 7. Lookaside upload (SIG) — details & fallback
 
-The SIG lookaside is `src.sigs.centos.org`; the tool defaults to `git.centos.org`
-(which mirrors it — do **not** override to `sources.stream.centos.org`, that's the
-Stream distro and 403s). Auth is the ACO `~/.centos.cert`. The tool isn't always
-current on the host, so run it in the Fedora toolbox:
+The blessed path is `centpkg-sig new-sources <files>` (§5c) — it uploads to the SIG
+lookaside via the ACO-cert signed endpoint (`git.centos.org/sources/upload_sig.cgi`,
+which serves the `src.sigs.centos.org` cache), rewrites `sources`, and updates
+`.gitignore`. Auth is the ACO `~/.centos.cert`. Uploads are content-addressed +
+idempotent (additive, never overwrite). Do **not** point tooling at
+`sources.stream.centos.org` — that's the Stream distro and 403s for SIG content.
 
+**Fallback** (no `centpkg-sig`, or an off-host run) — the lower-level uploader from
+`centos-packager`, in a current Fedora toolbox:
 ```bash
 K=~/centos-rpms/<pkg>
 podman run --rm --security-opt label=disable \
@@ -253,9 +263,8 @@ podman run --rm --security-opt label=disable \
     dnf install -y -q centos-packager
     cd /work
     for f in <tarball> <asc> <key.txt>; do centos-lookaside-upload-sig -f "$f" -n <pkg>; done'
-# verify (200): https://src.sigs.centos.org/sources/<pkg>/<file>/sha512/<sha512>/<file>
+# then write `sources` (sha512sum --tag) + .gitignore yourself — new-sources does this for you.
 ```
-Uploads are content-addressed + idempotent (additive, never overwrite).
 
 ## 8. Build-once promotion pipeline (propose → merge → undraft → promote)
 

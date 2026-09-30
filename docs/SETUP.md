@@ -54,6 +54,7 @@ quickstart hits a wall or you want to understand what you're running.
 | **A swamp registry account** | to `swamp extension pull` | sign up at [swamp-club.com](https://swamp-club.com), then `swamp auth login` |
 | **ACO client cert** | mTLS auth to CBS (`cbs.centos.org`) | ACO account → `centos-packager` → `centos-cert` → `~/.centos.cert` (steps below) |
 | **A SIG dist-git checkout** | *only for building/updating a package* | clone from `gitlab.com/CentOS/cloud/rpms/<pkg>` (steps below) |
+| **Packaging tools** | *only for building/updating a package* | `sudo dnf install centpkg-sig rpmdevtools mock` (dist-git/lookaside client, `spectool`/`rpmdev-bumpspec`, clean-chroot builds) |
 | **CBS group membership** | *only for real builds/tags* — read-only `sig-detect` needs just the cert | ask the Cloud SIG for `cloud` tag ACLs |
 | **GitLab PAT** | *only for the fork/MR flow* | fine-grained token, scopes in §4 |
 
