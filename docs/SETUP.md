@@ -69,7 +69,7 @@ swamp auth whoami        # confirm you're logged in to the registry
 ## 3. Pull the extensions
 
 All four model types (plus the `sig-promote` report, which ships inside
-`@kneel/koji`) come from the registry:
+`@kneel/sig-distgit`) come from the registry:
 
 ```bash
 swamp extension pull @kneel/koji
@@ -143,12 +143,12 @@ swamp workflow run sig-detect                  # ~2–4 min; hits CBS read-only
 ```
 
 `sig-detect` prints the actionable queue and writes the `sig-promote` report
-JSON under `.swamp/data/workflow/<workflow-id>/report-kneel-koji-sig-promote-json/<run>/raw`,
+JSON under `.swamp/data/workflow/<workflow-id>/report-kneel-sig-distgit-sig-promote-json/<run>/raw`,
 where `<workflow-id>` is the workflow **definition** id (stable across runs) and
 `<run>` increments per run. To grab the latest report regardless of ids:
 
 ```bash
-jq . "$(ls -t .swamp/data/workflow/*/report-kneel-koji-sig-promote-json/*/raw | head -1)"
+jq . "$(ls -t .swamp/data/workflow/*/report-kneel-sig-distgit-sig-promote-json/*/raw | head -1)"
 ```
 
 If that runs green, your setup is correct.
@@ -162,7 +162,7 @@ If that runs green, your setup is correct.
 - **The five workflows** are in [`../workflows/`](../workflows) — `sig-detect`
   (monitor), `sig-scratch-build` (validate), `sig-propose` (draft build),
   `sig-undraft` (promote on merge), `sig-tag-promote` (human-gated tag step).
-- **Current package status** for Epoxy: [SIG-STATUS.md](SIG-STATUS.md).
+- **Current package status** for Epoxy: generate it fresh with `swamp workflow run sig-detect` (a point-in-time report is not committed).
 
 ## Constants (Epoxy / c9s)
 

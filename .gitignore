@@ -12,3 +12,8 @@
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
 # END swamp managed section
+
+# point-in-time report — regenerate with sig-detect, do not track
+docs/SIG-STATUS.md
+# swamp-generated extension catalog cache
+extensions/models/upstream_extensions.json

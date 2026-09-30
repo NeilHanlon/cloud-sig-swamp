@@ -88,7 +88,7 @@ machine-readable queue, read the report JSON the run produced:
 
 ```bash
 # The report file is named `raw`, one per run dir. Grab the newest across all runs:
-R=$(ls -t .swamp/data/workflow/*/report-kneel-koji-sig-promote-json/*/raw | head -1)
+R=$(ls -t .swamp/data/workflow/*/report-kneel-sig-distgit-sig-promote-json/*/raw | head -1)
 jq '.summary' "$R"                                   # counts: actionable / unbuilt / promoteTesting / …
 jq -r '.rows[] | select(.status=="unbuilt" or .status=="promote-testing" or .status=="promote-release")
        | "\(.status)\t\(.package)\t\(.candidate // "-")"' "$R"

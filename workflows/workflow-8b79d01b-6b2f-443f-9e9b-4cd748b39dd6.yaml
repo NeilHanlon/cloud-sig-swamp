@@ -5,7 +5,7 @@ description: >-
   the three inputs the sig-promote report joins — the latest builds in each
   promotion tag (candidate/testing/release), the SIG dist-git spec versions, and
   the upstream OpenStack release facts — then let the workflow-scope
-  @kneel/koji/sig-promote report render the actionable queue (unbuilt /
+  @kneel/sig-distgit/sig-promote report render the actionable queue (unbuilt /
   promote-testing / promote-release / behind-upstream) with the exact cbs command
   per row. Takes NO actions — it only tells you what's actionable. Safe to cron.
   The three latest_builds calls are SERIALIZED (login -> candidate -> testing ->
@@ -16,7 +16,7 @@ description: >-
 tags: {}
 reports:
   require:
-    - "@kneel/koji/sig-promote"
+    - "@kneel/sig-distgit/sig-promote"
 inputs:
   type: object
   properties:

@@ -32,8 +32,9 @@ swamp workflow run sig-detect        # read-only; prints what's actionable
 | --- | --- |
 | [`docs/SETUP.md`](docs/SETUP.md) | Full setup: swamp install, extension pulls, vault creds, model instances |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | No-LLM operator recipes — build / update / promote a package by hand |
-| [`docs/SIG-STATUS.md`](docs/SIG-STATUS.md) | Current Epoxy package delta + pipeline status report |
 | [`workflows/`](workflows) | The five swamp workflows |
+
+Current package status is not committed — generate it fresh with `swamp workflow run sig-detect` (it reads live CBS + upstream state).
 
 ## Extensions
 
@@ -41,8 +42,8 @@ All published to the swamp registry — `docs/SETUP.md` pulls them:
 
 | Extension | Role |
 | --- | --- |
-| `@kneel/koji` | Native CBS Koji client (SSL/Kerberos); carries the `sig-promote` report |
-| `@kneel/sig-distgit` | Scans a SIG dist-git group for spec versions + `sources` state |
+| `@kneel/koji` | Native CBS Koji client (SSL/Kerberos) |
+| `@kneel/sig-distgit` | Scans a SIG dist-git group for spec versions + `sources` state; ships the `sig-promote` report |
 | `@kneel/openstack-releases` | Upstream OpenStack release feed |
 | `@webframp/gitlab` | GitLab MR operations |
 | `@kneel/gitlab-fork` | Adds `fork_project` (fork→upstream MRs) to `@webframp/gitlab` |
