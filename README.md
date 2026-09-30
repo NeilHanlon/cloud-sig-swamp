@@ -21,8 +21,8 @@ It answers two questions a SIG maintainer asks constantly:
 ```bash
 git clone https://github.com/NeilHanlon/cloud-sig-swamp
 cd cloud-sig-swamp
-# one-time setup: install swamp, pull extensions, create your vaults + models
-#   → see docs/SETUP.md
+# one-time setup: install swamp (https://swamp-club.com/manual), pull extensions,
+# get your ACO cert, create your vaults + models → see docs/SETUP.md
 swamp workflow run sig-detect        # read-only; prints what's actionable
 ```
 
