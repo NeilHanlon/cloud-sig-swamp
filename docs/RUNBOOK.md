@@ -87,7 +87,8 @@ The console prints the full matrix (actionable rows sorted first). For the
 machine-readable queue, read the report JSON the run produced:
 
 ```bash
-R=$(ls -td .swamp/data/workflow/8b79d01b-6b2f-443f-9e9b-4cd748b39dd6/report-kneel-koji-sig-promote-json/*/ | head -1)raw
+# The report file is named `raw`, one per run dir. Grab the newest across all runs:
+R=$(ls -t .swamp/data/workflow/*/report-kneel-koji-sig-promote-json/*/raw | head -1)
 jq '.summary' "$R"                                   # counts: actionable / unbuilt / promoteTesting / …
 jq -r '.rows[] | select(.status=="unbuilt" or .status=="promote-testing" or .status=="promote-release")
        | "\(.status)\t\(.package)\t\(.candidate // "-")"' "$R"

@@ -50,6 +50,11 @@ SIG members can run it. Details in §4–§6.
 
 These are the only packages that need a human decision right now.
 
+> The "Next action" column shows the canonical `cbs`/Koji command the report
+> emits, for reference. In this repo you don't run `cbs` by hand — a promotion is
+> `swamp workflow run sig-tag-promote` (candidate→testing→release, human-gated)
+> and a build is `sig-propose`. See [RUNBOOK.md](RUNBOOK.md) §7.
+
 | Status | Package | Upstream | In candidate | Next action |
 | --- | --- | --- | --- | --- |
 | **promote-testing** | openstack-keystone | 27.1.0 | `27.0.2-1.el9s` | `cbs tag-build cloud9s-openstack-epoxy-testing openstack-keystone-27.0.2-1.el9s` |
