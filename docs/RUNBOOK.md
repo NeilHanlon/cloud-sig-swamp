@@ -4,8 +4,8 @@ Operator runbook for **detecting**, building, updating, and promoting Cloud SIG
 (RDO) packages on **CBS** (`cbs.centos.org`). Everything lives in this repo —
 models, all five workflows, and the report.
 Copy-paste recipes; no LLM required. First-time setup (install swamp, pull the
-extensions, create your vaults and models) is in [SETUP.md](SETUP.md); this
-runbook assumes that is done. Every command below was run (or, for the
+extensions, add your ACO cert, create your two vaults — the model instances are
+already committed) is in [SETUP.md](SETUP.md); this runbook assumes that is done. Every command below was run (or, for the
 build/promote steps that are maintainer-gated, `swamp workflow validate`-clean) as
 written.
 

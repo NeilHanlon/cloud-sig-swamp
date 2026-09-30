@@ -22,7 +22,8 @@ It answers two questions a SIG maintainer asks constantly:
 git clone https://github.com/NeilHanlon/cloud-sig-swamp
 cd cloud-sig-swamp
 # one-time setup: install swamp (https://swamp-club.com/manual), pull extensions,
-# get your ACO cert, create your vaults + models → see docs/SETUP.md
+# get your ACO cert, create your two vaults → see docs/SETUP.md Quickstart.
+# (The four model instances are already committed — no `model create` needed.)
 swamp workflow run sig-detect        # read-only; prints what's actionable
 ```
 
